@@ -137,20 +137,33 @@ Rough priority order; pick any block and go:
    short-lived session cookie. Wire the Google Identity Services script into
    the frontend login view. Keep `DevAuth` behind the `-dev-login` flag for
    local hacking.
-3. **Cloud Run deploy.** 3-stage `Dockerfile` (node build → go build →
+3. **Optional email allowlist** (`internal/auth/allowlist.go`). Gate access
+   to an invite-only set of Google accounts. Config resolution order:
+   - unset → open (anyone with a Google account can sign in),
+   - `ALLOWLIST_EMAILS=alice@x.com,bob@y.com` → parse inline,
+   - `ALLOWLIST_GCS=gs://bucket/allowlist.txt` → fetch + cache with a
+     ~5-minute refresh, so you can edit the object in the console without
+     redeploying.
+   Check happens after ID-token verification; reject with 403 before any
+   user record is created. Case-insensitive match on the verified `email`
+   claim. Expose a tiny `GET /api/auth/status` so the frontend can render
+   "you're not on the guest list" cleanly instead of a bare 403.
+4. **Cloud Run deploy.** 3-stage `Dockerfile` (node build → go build →
    distroless/static). `gcloud run deploy --source=.`. Bucket + dedicated
    service account with `roles/storage.objectAdmin` scoped to the one bucket.
-   Configure via env: `BUCKET_NAME`, `GOOGLE_CLIENT_ID`. Document the one-off
-   bucket-create and IAM setup in this README.
-4. **Web Push for turn alerts.** Generate VAPID keys; `POST /api/push/subscribe`
+   Configure via env: `BUCKET_NAME`, `GOOGLE_CLIENT_ID`, optional
+   `ALLOWLIST_EMAILS` or `ALLOWLIST_GCS`. Keep `min-instances=0` so the free
+   tier actually stays free. Document the one-off bucket-create and IAM
+   setup in this README.
+5. **Web Push for turn alerts.** Generate VAPID keys; `POST /api/push/subscribe`
    stores the subscription under the user's Google `sub` so laptop + phone
    both get pinged. Server fires a push after each turn commit. Fall back to
    polling (already wired) when a browser has no subscription.
-5. **UX polish.** Tap-to-place as an alternative to drag (for phones that
+6. **UX polish.** Tap-to-place as an alternative to drag (for phones that
    don't handle `TouchSensor` well); game-history view; "recall last tile"
    keyboard shortcut; exchange confirmation modal; end-game summary screen
    with per-player leftover tiles.
-6. **Operational niceties.** Structured request logging, a `/healthz` for
+7. **Operational niceties.** Structured request logging, a `/healthz` for
    Cloud Run, a cron job that garbage-collects `invites/*.json` older than
    N days, a daily billing-alert budget.
 
