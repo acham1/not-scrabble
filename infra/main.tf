@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 6.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -87,6 +91,13 @@ resource "google_storage_bucket_iam_member" "app_state" {
 }
 
 # ---------------------------------------------------------------------------
+# Session secret — generated once, stored in Terraform state
+# ---------------------------------------------------------------------------
+resource "random_id" "session_secret" {
+  byte_length = 32
+}
+
+# ---------------------------------------------------------------------------
 # Cloud Run service
 # ---------------------------------------------------------------------------
 locals {
@@ -119,20 +130,14 @@ resource "google_cloud_run_v2_service" "app" {
         value = google_storage_bucket.state.name
       }
 
-      dynamic "env" {
-        for_each = var.google_client_id != "" ? [1] : []
-        content {
-          name  = "GOOGLE_CLIENT_ID"
-          value = var.google_client_id
-        }
+      env {
+        name  = "GOOGLE_CLIENT_ID"
+        value = var.google_client_id
       }
 
-      dynamic "env" {
-        for_each = var.session_secret != "" ? [1] : []
-        content {
-          name  = "SESSION_SECRET"
-          value = var.session_secret
-        }
+      env {
+        name  = "SESSION_SECRET"
+        value = random_id.session_secret.hex
       }
 
       dynamic "env" {

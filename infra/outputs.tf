@@ -17,3 +17,8 @@ output "service_account" {
   description = "Cloud Run service account email"
   value       = google_service_account.app.email
 }
+
+output "google_client_id" {
+  description = "OAuth client ID for Google Sign-In"
+  value       = var.google_client_id
+}

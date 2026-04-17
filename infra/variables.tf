@@ -17,16 +17,8 @@ variable "image_tag" {
 }
 
 variable "google_client_id" {
-  description = "Google OAuth client ID for Sign-In"
+  description = "Google OAuth client ID for Sign-In (create in GCP console)"
   type        = string
-  default     = ""
-}
-
-variable "session_secret" {
-  description = "Hex-encoded HMAC key for session cookies"
-  type        = string
-  sensitive   = true
-  default     = ""
 }
 
 variable "allowlist_emails" {
