@@ -42,6 +42,7 @@ export function GameBoardView({
   const [exchangeSelection, setExchangeSelection] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
   const [selectedRackIdx, setSelectedRackIdx] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -258,7 +259,6 @@ export function GameBoardView({
   };
 
   const inviteUrl = `${window.location.origin}/?invite=${encodeURIComponent(game.inviteCode)}`;
-  const [copied, setCopied] = useState(false);
 
   const copyInviteLink = async () => {
     try {
