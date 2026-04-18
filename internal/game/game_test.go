@@ -113,8 +113,9 @@ func TestBasicPlayAndScore(t *testing.T) {
 	if g.Players[0].Score != 10 {
 		t.Errorf("player score = %d, want 10", g.Players[0].Score)
 	}
-	if g.Turn != 1 {
-		t.Errorf("turn = %d, want 1", g.Turn)
+	// Turn advances past the open seat (player 2 unclaimed) and wraps back to player 1.
+	if g.CurrentPlayer().UserID != "p1" {
+		t.Errorf("expected turn back to p1 (open seat skipped), got %s", g.CurrentPlayer().UserID)
 	}
 	if len(g.Players[0].Rack) != 7 {
 		t.Errorf("rack not refilled: len = %d", len(g.Players[0].Rack))
@@ -352,19 +353,15 @@ func TestGameEndsWhenPlayerGoesOut(t *testing.T) {
 
 func testGame(t *testing.T, rack []Letter) *Game {
 	t.Helper()
-	g := NewGame("g1", "p1", "Alice", "INV", 1, time.Now())
-	g.Status = StatusActive
+	g := NewGame("g1", "p1", "Alice", "INV", 2, 1, time.Now())
 	g.Players[0].Rack = rack
 	return g
 }
 
 func testTwoPlayerGame(t *testing.T) *Game {
 	t.Helper()
-	g := NewGame("g1", "p1", "Alice", "INV", 7, time.Now())
+	g := NewGame("g1", "p1", "Alice", "INV", 2, 7, time.Now())
 	if err := g.AddPlayer("p2", "Bob"); err != nil {
-		t.Fatal(err)
-	}
-	if err := g.Start(time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	return g

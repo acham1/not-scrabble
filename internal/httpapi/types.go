@@ -13,6 +13,8 @@ type GameView struct {
 	CreatorID     string             `json:"creatorId"`
 	InviteCode    string             `json:"inviteCode"`
 	Status        game.Status        `json:"status"`
+	NumPlayers    int                `json:"numPlayers"`
+	OpenSeats     int                `json:"openSeats"`
 	CreatedAt     time.Time          `json:"createdAt"`
 	StartedAt     *time.Time         `json:"startedAt,omitempty"`
 	EndedAt       *time.Time         `json:"endedAt,omitempty"`
@@ -44,6 +46,8 @@ func viewFor(g *game.Game, userID string) *GameView {
 		CreatorID:  g.CreatorID,
 		InviteCode: g.InviteCode,
 		Status:     g.Status,
+		NumPlayers: g.NumPlayers,
+		OpenSeats:  g.OpenSeats(),
 		CreatedAt:  g.CreatedAt,
 		StartedAt:  g.StartedAt,
 		EndedAt:    g.EndedAt,
@@ -61,7 +65,8 @@ func viewFor(g *game.Game, userID string) *GameView {
 			Score:    p.Score,
 			RackSize: len(p.Rack),
 		}
-		if p.UserID == userID {
+		// Only show rack to the owning player; hide open seats' racks.
+		if p.UserID != "" && p.UserID == userID {
 			v.YourPlayerIdx = i
 			pv.Rack = append([]game.Letter(nil), p.Rack...)
 		}
@@ -75,6 +80,11 @@ func viewFor(g *game.Game, userID string) *GameView {
 		v.LastPlay = &last
 	}
 	return v
+}
+
+// CreateGameRequest is the body of POST /api/games.
+type CreateGameRequest struct {
+	NumPlayers int `json:"numPlayers"`
 }
 
 // CreateGameResponse is returned by POST /api/games.

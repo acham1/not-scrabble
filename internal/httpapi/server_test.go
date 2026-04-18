@@ -92,27 +92,29 @@ func TestEndToEndGameFlow(t *testing.T) {
 	bob.login("bob", "Bob")
 
 	var create CreateGameResponse
-	if resp := alice.do("POST", "/api/games", nil, &create); resp.StatusCode != 201 {
+	if resp := alice.do("POST", "/api/games", CreateGameRequest{NumPlayers: 2}, &create); resp.StatusCode != 201 {
 		t.Fatalf("create: status %d", resp.StatusCode)
 	}
 	if create.GameID == "" || create.InviteCode == "" {
 		t.Fatal("missing gameID or invite")
 	}
 
+	// Game is immediately active after creation.
+	var preJoin GameView
+	alice.do("GET", "/api/games/"+create.GameID, nil, &preJoin)
+	if preJoin.Status != game.StatusActive {
+		t.Fatalf("status after create = %s, want active", preJoin.Status)
+	}
+	if preJoin.OpenSeats != 1 {
+		t.Fatalf("openSeats = %d, want 1", preJoin.OpenSeats)
+	}
+
 	var joined GameView
 	if resp := bob.do("POST", "/api/games/join", JoinRequest{InviteCode: create.InviteCode}, &joined); resp.StatusCode != 200 {
 		t.Fatalf("join: status %d", resp.StatusCode)
 	}
-	if len(joined.Players) != 2 {
-		t.Fatalf("players = %d, want 2", len(joined.Players))
-	}
-
-	var started GameView
-	if resp := alice.do("POST", "/api/games/"+create.GameID+"/start", nil, &started); resp.StatusCode != 200 {
-		t.Fatalf("start: status %d", resp.StatusCode)
-	}
-	if started.Status != game.StatusActive {
-		t.Fatalf("status = %s", started.Status)
+	if joined.OpenSeats != 0 {
+		t.Fatalf("openSeats after join = %d, want 0", joined.OpenSeats)
 	}
 
 	// Alice fetches the game to see her rack.
@@ -170,9 +172,8 @@ func TestInvalidWordReturns400WithList(t *testing.T) {
 	bob.login("bob", "Bob")
 
 	var create CreateGameResponse
-	alice.do("POST", "/api/games", nil, &create)
+	alice.do("POST", "/api/games", CreateGameRequest{NumPlayers: 2}, &create)
 	bob.do("POST", "/api/games/join", JoinRequest{InviteCode: create.InviteCode}, nil)
-	alice.do("POST", "/api/games/"+create.GameID+"/start", nil, nil)
 
 	// Fetch Alice's rack and try to play some letters not forming a real word.
 	var v GameView

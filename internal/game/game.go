@@ -48,6 +48,7 @@ type Game struct {
 	CreatorID  string       `json:"creatorId"`
 	InviteCode string       `json:"inviteCode"`
 	Status     Status       `json:"status"`
+	NumPlayers int          `json:"numPlayers"` // target player count (2-4)
 	CreatedAt  time.Time    `json:"createdAt"`
 	StartedAt  *time.Time   `json:"startedAt,omitempty"`
 	EndedAt    *time.Time   `json:"endedAt,omitempty"`
@@ -61,60 +62,73 @@ type Game struct {
 	Winners    []int        `json:"winners,omitempty"`
 }
 
-// NewGame creates a waiting game with the creator as the first player.
-func NewGame(id, creatorID, creatorName, inviteCode string, seed int64, now time.Time) *Game {
+// NewGame creates an active game with pre-dealt racks. The creator occupies
+// seat 0; remaining seats are open (empty UserID) until players join.
+// numPlayers must be 2-4.
+func NewGame(id, creatorID, creatorName, inviteCode string, numPlayers int, seed int64, now time.Time) *Game {
+	if numPlayers < 2 {
+		numPlayers = 2
+	}
+	if numPlayers > 4 {
+		numPlayers = 4
+	}
+	bag := NewBag(seed)
+	players := make([]*Player, numPlayers)
+	for i := range players {
+		drawn, rem := DrawN(bag, RackSize)
+		bag = rem
+		players[i] = &Player{Rack: drawn}
+	}
+	// Seat 0 is the creator.
+	players[0].UserID = creatorID
+	players[0].Name = creatorName
+
 	return &Game{
 		ID:         id,
 		CreatorID:  creatorID,
 		InviteCode: inviteCode,
-		Status:     StatusWaiting,
+		Status:     StatusActive,
+		NumPlayers: numPlayers,
 		CreatedAt:  now,
-		Players: []*Player{{
-			UserID: creatorID,
-			Name:   creatorName,
-			Rack:   []Letter{},
-		}},
-		Board:   NewBoard(),
-		Bag:     NewBag(seed),
-		BagSeed: seed,
-		History: []TurnRecord{},
+		StartedAt:  &now,
+		Players:    players,
+		Board:      NewBoard(),
+		Bag:        bag,
+		BagSeed:    seed,
+		History:    []TurnRecord{},
 	}
 }
 
-// AddPlayer joins a waiting game. Returns an error if not in waiting state,
-// the game is full, or the user is already a player.
+// AddPlayer claims the next open seat. Returns an error if no open seats
+// remain or the user is already in the game.
 func (g *Game) AddPlayer(userID, name string) error {
-	if g.Status != StatusWaiting {
-		return errors.New("game is not accepting new players")
-	}
-	if len(g.Players) >= 4 {
-		return errors.New("game is full (max 4 players)")
+	if g.Status == StatusCompleted {
+		return errors.New("game is already finished")
 	}
 	for _, p := range g.Players {
 		if p.UserID == userID {
 			return errors.New("player already in game")
 		}
 	}
-	g.Players = append(g.Players, &Player{UserID: userID, Name: name, Rack: []Letter{}})
-	return nil
+	for _, p := range g.Players {
+		if p.UserID == "" {
+			p.UserID = userID
+			p.Name = name
+			return nil
+		}
+	}
+	return errors.New("game is full")
 }
 
-// Start deals initial racks and marks the game active.
-func (g *Game) Start(now time.Time) error {
-	if g.Status != StatusWaiting {
-		return errors.New("game already started or ended")
-	}
-	if len(g.Players) < 2 {
-		return errors.New("need at least 2 players to start")
-	}
+// OpenSeats returns the number of seats not yet claimed by a player.
+func (g *Game) OpenSeats() int {
+	n := 0
 	for _, p := range g.Players {
-		drawn, rem := DrawN(g.Bag, RackSize)
-		g.Bag = rem
-		p.Rack = drawn
+		if p.UserID == "" {
+			n++
+		}
 	}
-	g.Status = StatusActive
-	g.StartedAt = &now
-	return nil
+	return n
 }
 
 // CurrentPlayer returns the player whose turn it is, or nil if game not active.
@@ -122,19 +136,44 @@ func (g *Game) CurrentPlayer() *Player {
 	if g.Status != StatusActive {
 		return nil
 	}
-	return g.Players[g.Turn%len(g.Players)]
+	return g.Players[g.currentIdx()]
 }
 
-// requireActive returns an error unless it's userID's turn.
+// currentIdx returns the index of the current player.
+func (g *Game) currentIdx() int {
+	return g.Turn % len(g.Players)
+}
+
+// requireTurn returns an error unless it's userID's turn and the seat is claimed.
 func (g *Game) requireTurn(userID string) (int, error) {
 	if g.Status != StatusActive {
 		return 0, errors.New("game is not active")
 	}
-	idx := g.Turn % len(g.Players)
-	if g.Players[idx].UserID != userID {
+	idx := g.currentIdx()
+	p := g.Players[idx]
+	if p.UserID == "" {
+		return 0, errors.New("waiting for a player to join")
+	}
+	if p.UserID != userID {
 		return 0, errors.New("not your turn")
 	}
 	return idx, nil
+}
+
+// advanceTurn moves to the next claimed seat, skipping open seats.
+// If all remaining seats are open, the turn stays on the first claimed seat
+// after the current position (wrapping around).
+func (g *Game) advanceTurn() {
+	n := len(g.Players)
+	g.Turn++
+	// Skip open seats (at most n-1 skips since at least the player who just
+	// moved has a claimed seat, though it wraps past them).
+	for i := 0; i < n-1; i++ {
+		if g.Players[g.Turn%n].UserID != "" {
+			return
+		}
+		g.Turn++
+	}
 }
 
 // Play validates and applies a move. Returns the scoring breakdown.
@@ -175,7 +214,7 @@ func (g *Game) Play(userID string, placements []Placement, dict WordSet, now tim
 		At:         now,
 	})
 	g.PassStreak = 0
-	g.Turn++
+	g.advanceTurn()
 
 	g.maybeEnd(now, idx)
 	return res, nil
@@ -212,7 +251,7 @@ func (g *Game) Exchange(userID string, tiles []Letter, now time.Time) error {
 		At:        now,
 	})
 	g.PassStreak++
-	g.Turn++
+	g.advanceTurn()
 	g.maybeEnd(now, idx)
 	return nil
 }
@@ -227,7 +266,7 @@ func (g *Game) Pass(userID string, now time.Time) error {
 		PlayerIdx: idx, Type: TurnPass, At: now,
 	})
 	g.PassStreak++
-	g.Turn++
+	g.advanceTurn()
 	g.maybeEnd(now, idx)
 	return nil
 }
@@ -240,7 +279,13 @@ func (g *Game) maybeEnd(now time.Time, lastIdx int) {
 	bagEmpty := len(g.Bag) == 0
 
 	endByGoingOut := emptyRack && bagEmpty
-	endByPasses := g.PassStreak >= 2*len(g.Players)
+	claimed := 0
+	for _, p := range g.Players {
+		if p.UserID != "" {
+			claimed++
+		}
+	}
+	endByPasses := claimed >= 2 && g.PassStreak >= 2*claimed
 
 	if !endByGoingOut && !endByPasses {
 		return

@@ -8,7 +8,7 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { api, ApiError } from "../api/client";
-import type { Placement, UserSummary } from "../api/types";
+import type { Placement } from "../api/types";
 import { useGame } from "../state/useGame";
 import { BoardGrid } from "../components/BoardGrid";
 import { RackStrip } from "../components/RackStrip";
@@ -26,11 +26,9 @@ export interface PendingPlacement {
 
 export function GameBoardView({
   gameId,
-  me,
   onBack,
 }: {
   gameId: string;
-  me: UserSummary;
   onBack: () => void;
 }) {
   const { game, error, loading, refresh, setGame } = useGame(gameId);
@@ -245,20 +243,8 @@ export function GameBoardView({
     }
   };
 
-  const startGame = async () => {
-    setBusy(true);
-    resetSubmitErrors();
-    try {
-      const g = await api.startGame(gameId);
-      setGame(g);
-    } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const inviteUrl = `${window.location.origin}/?invite=${encodeURIComponent(game.inviteCode)}`;
+  const waitingForPlayer = game.status === "active" && game.players[game.currentIdx]?.userId === "";
 
   const copyInviteLink = async () => {
     try {
@@ -276,10 +262,10 @@ export function GameBoardView({
         <nav className="game-nav">
           <button className="btn-link" onClick={onBack}>← Games</button>
           <span className="muted">
-            {game.status === "waiting"
-              ? "Waiting for players"
-              : game.status === "completed"
-                ? "Game over"
+            {game.status === "completed"
+              ? "Game over"
+              : waitingForPlayer
+                ? "Waiting for a player to join"
                 : isYour
                   ? "Your turn"
                   : `${game.players[game.currentIdx]?.name ?? "?"}'s turn`}
@@ -290,25 +276,28 @@ export function GameBoardView({
         </nav>
 
         <div className="scores">
-          {game.players.map((p, i) => (
-            <div
-              key={p.userId}
-              className={`score-pill${i === game.currentIdx && game.status === "active" ? " active" : ""}${game.winners?.includes(i) ? " winner" : ""}`}
-            >
-              <span className="score-name">{p.name}</span>
-              <span className="score-value">{p.score}</span>
-              <span className="score-rack muted">({p.rackSize})</span>
-            </div>
-          ))}
+          {game.players.map((p, i) => {
+            if (!p.userId) return null;
+            return (
+              <div
+                key={p.userId}
+                className={`score-pill${i === game.currentIdx && game.status === "active" ? " active" : ""}${game.winners?.includes(i) ? " winner" : ""}`}
+              >
+                <span className="score-name">{p.name}</span>
+                <span className="score-value">{p.score}</span>
+                <span className="score-rack muted">({p.rackSize})</span>
+              </div>
+            );
+          })}
           <div className="score-pill bag">
             <span className="score-name">Bag</span>
             <span className="score-value">{game.bagSize}</span>
           </div>
         </div>
 
-        {game.status === "waiting" && (
+        {game.openSeats > 0 && (
           <section className="panel">
-            <h3>Invite players</h3>
+            <h3>Invite players ({game.numPlayers - game.openSeats}/{game.numPlayers} joined)</h3>
             <p>
               Share this code: <code className="invite-code">{game.inviteCode}</code>
             </p>
@@ -318,11 +307,6 @@ export function GameBoardView({
                 {copied ? "Copied!" : "Copy link"}
               </button>
             </div>
-            {game.creatorId === me.userId && (
-              <button disabled={game.players.length < 2 || busy} onClick={startGame}>
-                Start game ({game.players.length}/4 joined)
-              </button>
-            )}
           </section>
         )}
 

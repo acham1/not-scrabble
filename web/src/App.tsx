@@ -81,7 +81,6 @@ export function App() {
       {route.kind === "game" && (
         <GameBoardView
           gameId={route.id}
-          me={user}
           onBack={() => navigate({ kind: "lobby" })}
         />
       )}

@@ -1,4 +1,5 @@
 import type {
+  CreateGameRequest,
   CreateGameResponse,
   ErrorResponse,
   GameSummary,
@@ -51,10 +52,9 @@ export const api = {
   googleLogout: () => request<void>("POST", "/api/auth/google/logout"),
   me: () => request<UserSummary>("GET", "/api/users/me"),
   myGames: () => request<GameSummary[]>("GET", "/api/users/me/games"),
-  createGame: () => request<CreateGameResponse>("POST", "/api/games"),
+  createGame: (req: CreateGameRequest) => request<CreateGameResponse>("POST", "/api/games", req),
   joinGame: (req: JoinRequest) => request<GameView>("POST", "/api/games/join", req),
   getGame: (id: string) => request<GameView>("GET", `/api/games/${id}`),
-  startGame: (id: string) => request<GameView>("POST", `/api/games/${id}/start`),
   play: (id: string, req: PlayRequest) =>
     request<PlayResponse>("POST", `/api/games/${id}/plays`, req),
   pushVapidKey: () => request<{ key: string }>("GET", "/api/push/vapid-key"),

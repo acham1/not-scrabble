@@ -11,6 +11,7 @@ export function LobbyView({
 }) {
   const [games, setGames] = useState<GameSummary[] | null>(null);
   const [invite, setInvite] = useState(inviteCode ?? "");
+  const [numPlayers, setNumPlayers] = useState(2);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [autoJoinAttempted, setAutoJoinAttempted] = useState(false);
@@ -41,7 +42,7 @@ export function LobbyView({
     setBusy(true);
     setError(null);
     try {
-      const { gameId } = await api.createGame();
+      const { gameId } = await api.createGame({ numPlayers });
       onOpenGame(gameId);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -69,9 +70,19 @@ export function LobbyView({
     <div className="lobby">
       <section className="panel">
         <h2>New game</h2>
-        <button onClick={create} disabled={busy}>
-          Create game
-        </button>
+        <div className="create-form">
+          <label className="player-count-label">
+            Players
+            <select value={numPlayers} onChange={(e) => setNumPlayers(Number(e.target.value))}>
+              <option value={2}>2</option>
+              <option value={3}>3</option>
+              <option value={4}>4</option>
+            </select>
+          </label>
+          <button onClick={create} disabled={busy}>
+            Create game
+          </button>
+        </div>
       </section>
       <section className="panel">
         <h2>Join by invite</h2>

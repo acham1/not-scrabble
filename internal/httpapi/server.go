@@ -76,7 +76,6 @@ func (s *Server) routes() {
 	api("POST /api/games", s.handleCreateGame)
 	api("POST /api/games/join", s.handleJoinGame)
 	api("GET /api/games/{id}", s.handleGetGame)
-	api("POST /api/games/{id}/start", s.handleStartGame)
 	api("POST /api/games/{id}/plays", s.handlePlay)
 
 	// Push
@@ -195,7 +194,9 @@ func (s *Server) handleUserGames(w http.ResponseWriter, r *http.Request) {
 		names := make([]string, 0, len(g.Players))
 		yourTurn := false
 		for i, p := range g.Players {
-			names = append(names, p.Name)
+			if p.UserID != "" {
+				names = append(names, p.Name)
+			}
 			if g.Status == game.StatusActive && i == g.Turn%len(g.Players) && p.UserID == id.UserID {
 				yourTurn = true
 			}
@@ -213,9 +214,17 @@ func (s *Server) handleUserGames(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 	id, _ := identityFrom(r.Context())
+	var req CreateGameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Accept empty body (defaults to 2 players).
+		req.NumPlayers = 2
+	}
+	if req.NumPlayers < 2 || req.NumPlayers > 4 {
+		req.NumPlayers = 2
+	}
 	gameID := newID(16)
 	invite := newInvite()
-	g := game.NewGame(gameID, id.UserID, id.Name, invite, s.deps.RandSeed(), s.deps.Now())
+	g := game.NewGame(gameID, id.UserID, id.Name, invite, req.NumPlayers, s.deps.RandSeed(), s.deps.Now())
 	if err := s.deps.Store.CreateGame(r.Context(), g); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -281,28 +290,6 @@ func (s *Server) handleGetGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, viewFor(g, id.UserID))
-}
-
-func (s *Server) handleStartGame(w http.ResponseWriter, r *http.Request) {
-	id, _ := identityFrom(r.Context())
-	gameID := r.PathValue("id")
-	g, err := s.deps.Store.GetGame(r.Context(), gameID)
-	if err != nil {
-		writeErr(w, http.StatusNotFound, "game not found")
-		return
-	}
-	if g.CreatorID != id.UserID {
-		writeErr(w, http.StatusForbidden, "only the creator can start the game")
-		return
-	}
-	updated, err := s.deps.Store.UpdateGame(r.Context(), g, func(g *game.Game) error {
-		return g.Start(s.deps.Now())
-	})
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, viewFor(updated, id.UserID))
 }
 
 func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {

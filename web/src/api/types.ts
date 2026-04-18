@@ -50,6 +50,8 @@ export interface GameView {
   creatorId: string;
   inviteCode: string;
   status: Status;
+  numPlayers: number;
+  openSeats: number;
   createdAt: string;
   startedAt?: string;
   endedAt?: string;
@@ -62,6 +64,10 @@ export interface GameView {
   winners?: number[];
   yourPlayerIdx: number;
   lastPlay?: TurnRecord;
+}
+
+export interface CreateGameRequest {
+  numPlayers: number;
 }
 
 export interface CreateGameResponse {

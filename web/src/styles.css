@@ -130,6 +130,17 @@ code {
 .panel h2 { margin-top: 0; }
 .panel h3 { margin-top: 0; }
 
+.create-form { display: flex; gap: 0.75rem; align-items: center; }
+.player-count-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; color: var(--muted); }
+.player-count-label select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--cell-border);
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
 .join-form { display: flex; gap: 0.5rem; }
 
 .game-list { list-style: none; padding: 0; margin: 0; }
