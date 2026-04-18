@@ -160,20 +160,10 @@ func (g *Game) requireTurn(userID string) (int, error) {
 	return idx, nil
 }
 
-// advanceTurn moves to the next claimed seat, skipping open seats.
-// If all remaining seats are open, the turn stays on the first claimed seat
-// after the current position (wrapping around).
+// advanceTurn moves to the next seat. If that seat is unclaimed,
+// requireTurn will block play until a player joins and claims it.
 func (g *Game) advanceTurn() {
-	n := len(g.Players)
 	g.Turn++
-	// Skip open seats (at most n-1 skips since at least the player who just
-	// moved has a claimed seat, though it wraps past them).
-	for i := 0; i < n-1; i++ {
-		if g.Players[g.Turn%n].UserID != "" {
-			return
-		}
-		g.Turn++
-	}
 }
 
 // Play validates and applies a move. Returns the scoring breakdown.

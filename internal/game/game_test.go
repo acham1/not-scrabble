@@ -113,9 +113,16 @@ func TestBasicPlayAndScore(t *testing.T) {
 	if g.Players[0].Score != 10 {
 		t.Errorf("player score = %d, want 10", g.Players[0].Score)
 	}
-	// Turn advances past the open seat (player 2 unclaimed) and wraps back to player 1.
-	if g.CurrentPlayer().UserID != "p1" {
-		t.Errorf("expected turn back to p1 (open seat skipped), got %s", g.CurrentPlayer().UserID)
+	// Turn advances to the open seat; p1 can't play again until someone joins.
+	if g.CurrentPlayer().UserID != "" {
+		t.Errorf("expected turn on open seat, got %s", g.CurrentPlayer().UserID)
+	}
+	// Verify p1 is blocked from playing.
+	_, err = g.Play("p1", []Placement{
+		placement(7, 9, 'S', false),
+	}, dict("CATS"), time.Now())
+	if err == nil || !contains(err.Error(), "waiting") {
+		t.Errorf("expected waiting error, got %v", err)
 	}
 	if len(g.Players[0].Rack) != 7 {
 		t.Errorf("rack not refilled: len = %d", len(g.Players[0].Rack))
