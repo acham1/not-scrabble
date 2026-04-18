@@ -225,6 +225,11 @@ code {
   white-space: nowrap;
 }
 
+.game { text-align: center; }
+.game .panel, .game .scores, .game .game-nav, .game .actions,
+.game .score-preview, .game .error, .game .exchange-hint,
+.game .turn-log, .game .end-game-summary { text-align: left; }
+
 .board {
   display: inline-block;
   background: var(--cell-border);
