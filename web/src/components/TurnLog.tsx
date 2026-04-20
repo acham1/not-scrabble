@@ -7,8 +7,9 @@ export function TurnLog({ game }: { game: GameView }) {
   return (
     <section className="turn-log">
       <h3>History</h3>
-      <ol>
-        {game.history.map((t, i) => {
+      <ol reversed start={game.history.length}>
+        {[...game.history].reverse().map((t, i) => {
+          const origIdx = game.history.length - 1 - i;
           const name = game.players[t.playerIdx]?.name ?? "?";
           let detail = "";
           if (t.type === "play") {
@@ -21,7 +22,7 @@ export function TurnLog({ game }: { game: GameView }) {
             detail = "passed";
           }
           return (
-            <li key={i}>
+            <li key={origIdx}>
               <strong>{name}</strong> {detail}
             </li>
           );

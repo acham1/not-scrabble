@@ -5,9 +5,11 @@ import type {
   GameSummary,
   GameView,
   JoinRequest,
+  Placement,
   PlayRequest,
   PlayResponse,
   UserSummary,
+  ValidateResponse,
 } from "./types";
 
 export class ApiError extends Error {
@@ -57,6 +59,8 @@ export const api = {
   getGame: (id: string) => request<GameView>("GET", `/api/games/${id}`),
   play: (id: string, req: PlayRequest) =>
     request<PlayResponse>("POST", `/api/games/${id}/plays`, req),
+  validate: (id: string, placements: Placement[]) =>
+    request<ValidateResponse>("POST", `/api/games/${id}/validate`, { placements }),
   pushVapidKey: () => request<{ key: string }>("GET", "/api/push/vapid-key"),
   pushSubscribe: (sub: PushSubscriptionJSON) =>
     request<void>("POST", "/api/push/subscribe", sub),

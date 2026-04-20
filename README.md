@@ -154,6 +154,7 @@ replayable from the turn history for debugging.
 | POST   | `/api/games/join`              | `{inviteCode}` — join by code              |
 | GET    | `/api/games/{id}`              | redacted game state for the caller         |
 | POST   | `/api/games/{id}/plays`        | `{type: "play"\|"exchange"\|"pass", ...}`   |
+| POST   | `/api/games/{id}/validate`     | `{placements}` — dry-run word validation   |
 | GET    | `/api/push/vapid-key`          | VAPID public key for push subscription     |
 | POST   | `/api/push/subscribe`          | store a Web Push subscription              |
 | GET    | `/healthz`                     | health check                               |
@@ -177,7 +178,8 @@ All major planned features are implemented:
 - **Web Push notifications** — VAPID-based; server pings the next player
   after each turn. Service worker registered on login.
 - **UX polish** — tap-to-place (mobile-friendly), Escape recalls last tile,
-  client-side score preview, end-game summary with winners.
+  live score preview with server-side dictionary validation, off-turn tile
+  staging, rack reorder (drag) and shuffle, end-game summary with winners.
 - **`/healthz`** endpoint for Cloud Run health checks.
 
 ### Environment variables (production)

@@ -111,6 +111,21 @@ type PlayResponse struct {
 	Game   *GameView        `json:"game"`
 }
 
+// ValidateRequest is the body of POST /api/games/{id}/validate.
+type ValidateRequest struct {
+	Placements []game.Placement `json:"placements"`
+}
+
+// ValidateResponse is returned by the validate endpoint.
+type ValidateResponse struct {
+	Valid        bool              `json:"valid"`
+	Words        []game.ScoredWord `json:"words,omitempty"`
+	Score        int               `json:"score"`
+	Bingo        bool              `json:"bingo"`
+	Error        string            `json:"error,omitempty"`
+	InvalidWords []string          `json:"invalidWords,omitempty"`
+}
+
 // ErrorResponse is a JSON error.
 type ErrorResponse struct {
 	Error        string   `json:"error"`

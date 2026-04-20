@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragEndEvent,
@@ -8,7 +8,7 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { api, ApiError } from "../api/client";
-import type { Placement } from "../api/types";
+import type { Placement, ValidateResponse } from "../api/types";
 import { useGame } from "../state/useGame";
 import { BoardGrid } from "../components/BoardGrid";
 import { RackStrip } from "../components/RackStrip";
@@ -41,17 +41,31 @@ export function GameBoardView({
   const [busy, setBusy] = useState(false);
   const [selectedRackIdx, setSelectedRackIdx] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  const [rackOrder, setRackOrder] = useState<number[]>([]);
+  const [validation, setValidation] = useState<ValidateResponse | null>(null);
+  const validateTimer = useRef<number | null>(null);
+  const lastTurn = useRef<number>(-1);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 8 } }),
   );
 
-  const rackUsed = useMemo(() => {
+  // rackUsed tracks *server* rack indices that are placed on the board
+  const serverRackUsed = useMemo(() => {
     const used = new Set<number>();
     for (const p of pending) used.add(p.rackIdx);
     return used;
   }, [pending]);
+
+  // rackUsed in *display* indices for the RackStrip
+  const rackUsed = useMemo(() => {
+    const used = new Set<number>();
+    for (let d = 0; d < rackOrder.length; d++) {
+      if (serverRackUsed.has(rackOrder[d])) used.add(d);
+    }
+    return used;
+  }, [serverRackUsed, rackOrder]);
 
   const scorePreview = useMemo(
     () => (game ? previewScore(game.board, pending) : null),
@@ -60,30 +74,106 @@ export function GameBoardView({
 
   const isYour = game != null && game.yourPlayerIdx >= 0 && game.currentIdx === game.yourPlayerIdx && game.status === "active";
   const myPlayer = game != null && game.yourPlayerIdx >= 0 ? game.players[game.yourPlayerIdx] : null;
-  const rack = myPlayer?.rack ?? [];
+  const serverRack = myPlayer?.rack ?? [];
+
+  // Clear staged tiles when the game state changes (opponent played, or after
+  // our own play). Tracked by turn number.
+  useEffect(() => {
+    if (!game) return;
+    if (lastTurn.current >= 0 && game.turn !== lastTurn.current) {
+      setPending([]);
+      setValidation(null);
+      setSubmitError(null);
+      setInvalidWords([]);
+      setExchangeMode(false);
+      setExchangeSelection(new Set());
+    }
+    lastTurn.current = game.turn;
+  }, [game?.turn]);
+
+  // Keep rackOrder in sync with server rack length; preserve order on refresh
+  // if the rack hasn't changed, reset on length change (post-play refill).
+  useEffect(() => {
+    setRackOrder((prev) => {
+      if (prev.length === serverRack.length) return prev;
+      return serverRack.map((_, i) => i);
+    });
+  }, [serverRack.length]);
+
+  // Display rack in the user's chosen order
+  const rack = rackOrder.length === serverRack.length
+    ? rackOrder.map((i) => serverRack[i])
+    : serverRack;
+  // Map from display index to server rack index
+  const displayToServer = useCallback((displayIdx: number): number =>
+    rackOrder.length === serverRack.length ? rackOrder[displayIdx] : displayIdx,
+  [rackOrder, serverRack.length]);
+
+  const shuffleRack = useCallback(() => {
+    setRackOrder((prev) => {
+      const arr = [...prev];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    });
+  }, []);
+
+  // Debounced server-side word validation when tiles are staged.
+  useEffect(() => {
+    if (validateTimer.current) {
+      window.clearTimeout(validateTimer.current);
+      validateTimer.current = null;
+    }
+    // Only validate when the client-side preview thinks the placement is valid
+    // (tiles in line, connected, etc.)
+    if (!game || pending.length === 0 || !scorePreview?.valid) {
+      setValidation(null);
+      return;
+    }
+    validateTimer.current = window.setTimeout(async () => {
+      try {
+        const placements: Placement[] = pending.map(({ rackIdx: _rackIdx, ...rest }) => rest);
+        const resp = await api.validate(gameId, placements);
+        setValidation(resp);
+      } catch {
+        // Validation is best-effort; don't break the UI
+        setValidation(null);
+      }
+    }, 300);
+    return () => {
+      if (validateTimer.current) {
+        window.clearTimeout(validateTimer.current);
+        validateTimer.current = null;
+      }
+    };
+  }, [game, gameId, pending, scorePreview?.valid]);
 
   // Tap-to-place: tap a rack tile to select, then tap an empty board cell.
-  const handleRackTap = useCallback((rackIdx: number) => {
-    if (!isYour || exchangeMode) return;
+  // rackIdx here is a *display* index.
+  const handleRackTap = useCallback((displayIdx: number) => {
+    if (exchangeMode) return;
     setSubmitError(null);
     setInvalidWords([]);
-    setSelectedRackIdx((prev) => (prev === rackIdx ? null : rackIdx));
-  }, [isYour, exchangeMode]);
+    setSelectedRackIdx((prev) => (prev === displayIdx ? null : displayIdx));
+  }, [exchangeMode]);
 
   const handleCellTap = useCallback((row: number, col: number) => {
-    if (!isYour || selectedRackIdx === null) return;
+    if (selectedRackIdx === null) return;
+    const serverIdx = displayToServer(selectedRackIdx);
     if (game!.board.squares[row][col] || pending.some((p) => p.row === row && p.col === col)) return;
-    if (rackUsed.has(selectedRackIdx)) { setSelectedRackIdx(null); return; }
+    if (serverRackUsed.has(serverIdx)) { setSelectedRackIdx(null); return; }
     const letter = rack[selectedRackIdx];
     if (letter === "?") {
-      setBlankPrompt({ row, col, rackIdx: selectedRackIdx });
+      setBlankPrompt({ row, col, rackIdx: serverIdx });
     } else {
-      setPending((prev) => [...prev, { row, col, letter, blank: false, rackIdx: selectedRackIdx }]);
+      setPending((prev) => [...prev, { row, col, letter, blank: false, rackIdx: serverIdx }]);
     }
     setSelectedRackIdx(null);
     setSubmitError(null);
     setInvalidWords([]);
-  }, [isYour, selectedRackIdx, game, pending, rack, rackUsed]);
+  }, [selectedRackIdx, game, pending, rack, serverRackUsed, displayToServer]);
 
   // Keyboard: Escape recalls last tile, Enter submits.
   useEffect(() => {
@@ -111,12 +201,13 @@ export function GameBoardView({
 
   const handleDragEnd = (e: DragEndEvent) => {
     resetSubmitErrors();
-    if (!e.over || !isYour) return;
+    if (!e.over) return;
     const overId = String(e.over.id);
     const activeId = String(e.active.id);
 
     if (activeId.startsWith("rack-")) {
-      const rackIdx = Number(activeId.slice(5));
+      const displayIdx = Number(activeId.slice(5));
+      const serverIdx = displayToServer(displayIdx);
       if (overId.startsWith("cell-")) {
         const [, r, c] = overId.split("-");
         const row = Number(r);
@@ -125,11 +216,23 @@ export function GameBoardView({
         if (game.board.squares[row][col] || pending.some((p) => p.row === row && p.col === col)) {
           return;
         }
-        const letter = rack[rackIdx];
+        const letter = rack[displayIdx];
         if (letter === "?") {
-          setBlankPrompt({ row, col, rackIdx });
+          setBlankPrompt({ row, col, rackIdx: serverIdx });
         } else {
-          setPending((prev) => [...prev, { row, col, letter, blank: false, rackIdx }]);
+          setPending((prev) => [...prev, { row, col, letter, blank: false, rackIdx: serverIdx }]);
+        }
+      }
+      // Rack-to-rack reorder: drop a rack tile onto another rack tile
+      if (overId.startsWith("rack-")) {
+        const targetDisplayIdx = Number(overId.slice(5));
+        if (displayIdx !== targetDisplayIdx) {
+          setRackOrder((prev) => {
+            const arr = [...prev];
+            const [removed] = arr.splice(displayIdx, 1);
+            arr.splice(targetDisplayIdx, 0, removed);
+            return arr;
+          });
         }
       }
       return;
@@ -230,7 +333,7 @@ export function GameBoardView({
     setBusy(true);
     resetSubmitErrors();
     try {
-      const tiles = [...exchangeSelection].map((i) => rack[i]);
+      const tiles = [...exchangeSelection].map((displayIdx) => rack[displayIdx]);
       const resp = await api.play(gameId, { type: "exchange", exchange: tiles });
       setGame(resp.game);
       setPending([]);
@@ -322,6 +425,7 @@ export function GameBoardView({
               onToggleExchange={toggleExchangeTile}
               selectedIdx={selectedRackIdx}
               onTileTap={handleRackTap}
+              onShuffle={shuffleRack}
             />
 
             {exchangeMode && (
@@ -329,22 +433,28 @@ export function GameBoardView({
             )}
 
             {!exchangeMode && pending.length > 0 && scorePreview && (
-              <div className={`score-preview${scorePreview.valid ? "" : " invalid"}`}>
+              <div className={`score-preview${scorePreview.valid ? "" : " invalid"}${validation && !validation.valid ? " invalid" : ""}`}>
                 {scorePreview.valid ? (
                   <>
-                    {scorePreview.words.map((w, i) => (
-                      <span key={`${w.word}-${i}`} className="score-preview-word">
-                        <span className="score-preview-letters">{w.word}</span>
-                        <span className="score-preview-points">{w.score}</span>
-                      </span>
-                    ))}
-                    {scorePreview.bingo && (
+                    {(validation?.valid ? validation.words! : scorePreview.words).map((w, i) => {
+                      const isInvalid = validation?.invalidWords?.includes(w.word);
+                      return (
+                        <span key={`${w.word}-${i}`} className={`score-preview-word${isInvalid ? " score-preview-invalid" : ""}`}>
+                          <span className="score-preview-letters">{w.word}</span>
+                          <span className="score-preview-points">{w.score}</span>
+                        </span>
+                      );
+                    })}
+                    {(validation?.bingo ?? scorePreview.bingo) && (
                       <span className="score-preview-word score-preview-bingo">
                         <span className="score-preview-letters">BINGO</span>
                         <span className="score-preview-points">+50</span>
                       </span>
                     )}
-                    <span className="score-preview-total">= {scorePreview.total} pts</span>
+                    <span className="score-preview-total">= {validation?.valid ? validation.score : scorePreview.total} pts</span>
+                    {validation && !validation.valid && validation.invalidWords && (
+                      <span className="score-preview-error">Not in dictionary: {validation.invalidWords.join(", ")}</span>
+                    )}
                   </>
                 ) : (
                   <span className="muted">{scorePreview.reason ?? "—"}</span>
@@ -371,7 +481,7 @@ export function GameBoardView({
                     Play ({pending.length})
                   </button>
                   <button
-                    disabled={!isYour || pending.length === 0 || busy}
+                    disabled={pending.length === 0 || busy}
                     onClick={recall}
                   >
                     Recall

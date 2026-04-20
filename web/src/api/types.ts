@@ -97,6 +97,19 @@ export interface PlayResponse {
   game: GameView;
 }
 
+export interface ValidateRequest {
+  placements: Placement[];
+}
+
+export interface ValidateResponse {
+  valid: boolean;
+  words?: ScoredWord[];
+  score: number;
+  bingo: boolean;
+  error?: string;
+  invalidWords?: string[];
+}
+
 export interface ErrorResponse {
   error: string;
   invalidWords?: string[];

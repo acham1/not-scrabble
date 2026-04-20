@@ -77,6 +77,7 @@ func (s *Server) routes() {
 	api("POST /api/games/join", s.handleJoinGame)
 	api("GET /api/games/{id}", s.handleGetGame)
 	api("POST /api/games/{id}/plays", s.handlePlay)
+	api("POST /api/games/{id}/validate", s.handleValidate)
 
 	// Push
 	if s.deps.Push != nil {
@@ -355,6 +356,49 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 			URL:   "/?game=" + gameID,
 		})
 	}
+}
+
+func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
+	id, _ := identityFrom(r.Context())
+	gameID := r.PathValue("id")
+	var req ValidateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	g, err := s.deps.Store.GetGame(r.Context(), gameID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "game not found")
+		return
+	}
+	// Find the player's rack.
+	playerIdx := -1
+	for i, p := range g.Players {
+		if p.UserID == id.UserID {
+			playerIdx = i
+			break
+		}
+	}
+	if playerIdx < 0 {
+		writeErr(w, http.StatusForbidden, "not a player in this game")
+		return
+	}
+	rack := g.Players[playerIdx].Rack
+	res, err := game.ValidateAndScore(g.Board, rack, req.Placements, s.deps.Dict)
+	if err != nil {
+		resp := ValidateResponse{Valid: false, Error: err.Error()}
+		if iw, ok := errors.AsType[*game.InvalidWordsError](err); ok {
+			resp.InvalidWords = iw.Words
+		}
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	writeJSON(w, http.StatusOK, ValidateResponse{
+		Valid: true,
+		Words: res.Words,
+		Score: res.Score,
+		Bingo: res.Bingo,
+	})
 }
 
 func (s *Server) handlePushSubscribe(w http.ResponseWriter, r *http.Request) {
